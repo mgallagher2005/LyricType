@@ -59,7 +59,7 @@ input[type=range]{width:100%;accent-color:var(--a)}
 .ln .hid{color:transparent;border-bottom:1px dotted #fff3}
 @keyframes bl{50%{border-color:transparent}}
 .raw{font-size:13px;color:var(--mut);font-family:Inter;margin-top:-10px}
-.tbar{position:absolute;left:0;top:0;height:3px;background:linear-gradient(90deg,var(--a),var(--b));width:0}
+.ready{text-align:center;color:var(--b);font-weight:600;margin-bottom:14px}.tbar{position:absolute;left:0;top:0;height:3px;background:linear-gradient(90deg,var(--a),var(--b));width:0}
 #ytwrap{position:fixed;right:16px;bottom:16px;width:240px;height:135px;border-radius:12px;overflow:hidden;border:1px solid var(--bd);z-index:5;background:#000}
 #ytwrap iframe{width:100%;height:100%}
 .overlay{position:absolute;inset:0;background:#0b0b14ee;display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:700;z-index:3}
@@ -81,7 +81,7 @@ kbd{background:#fff1;border:1px solid var(--bd);border-radius:6px;padding:1px 7p
   <!-- SEARCH -->
   <section id="s-search">
     <h1>Type the song<br><span>as it plays.</span></h1>
-    <p class="sub">Search any song, pick a mode, and type the lyrics in time with the music.</p>
+    <p class="sub">Search any song, pick a mode, and type the lyrics. The music starts when you do.</p>
     <div class="row"><input type="text" id="q" placeholder="Search a song or artist…" autofocus><button id="go">Search</button></div>
     <div id="status"></div>
     <div id="results"></div>
@@ -102,11 +102,11 @@ kbd{background:#fff1;border:1px solid var(--bd);border-radius:6px;padding:1px 7p
     </div>
     <div id="srcYt"><input type="text" id="ytUrl" placeholder="Paste a YouTube URL of the song…"><div class="hint">Don't have one? <a id="ytSearch" target="_blank" rel="noopener">Search YouTube for this song ↗</a></div></div>
     <div id="srcFile" class="hide"><input type="file" id="file" accept="audio/*"></div>
-    <div id="srcNone" class="hide hint">Lyrics run on a timer. Start your own music in another tab if you like.</div>
+    <div id="srcNone" class="hide hint">No music will play. Just type the lyrics at your own pace.</div>
 
-    <h3>Sync offset: <span id="offLbl">0.0s</span></h3>
-    <input type="range" id="off" min="-15" max="15" step="0.1" value="0">
-    <div class="hint">If the video has a longer intro than the studio version, slide left. You can also nudge live with <kbd>[</kbd> and <kbd>]</kbd>.</div>
+    <h3>Typing rules</h3>
+    <div class="chips"><div class="chip on" data-r="strict">Exact · caps &amp; punctuation</div><div class="chip" data-r="relaxed">Relaxed · letters only</div></div>
+    <div class="hint">The music starts the moment you type your first letter. No timing to set up, and you move on at your own pace.</div>
     <div style="margin-top:26px"><button id="start" style="font-size:18px;padding:16px 34px">Start ▶</button></div>
   </section>
 
@@ -118,8 +118,8 @@ kbd{background:#fff1;border:1px solid var(--bd);border-radius:6px;padding:1px 7p
       <div class="card"><small>Combo</small><b id="combo">0</b></div>
       <div class="card"><small>WPM</small><b id="wpm">0</b></div>
     </div>
-    <div class="card stage" id="stage"><div class="tbar" id="tbar"></div><div id="lines"></div><div class="overlay hide" id="pause">Paused — press Esc</div></div>
-    <div class="keys"><kbd>Esc</kbd> pause · <kbd>Backspace</kbd> fix · <kbd>Enter</kbd> skip line · <kbd>[</kbd> <kbd>]</kbd> sync · punctuation &amp; caps don't matter</div>
+    <div class="card stage" id="stage"><div class="ready" id="ready">♪ Start typing and the music begins</div><div id="lines"></div><div class="overlay hide" id="pause">Paused — press Esc</div></div>
+    <div class="keys"><kbd>Esc</kbd> pause · <kbd>Space</kbd> next line (once a line is finished) · <kbd>Backspace</kbd> fix · <kbd>Enter</kbd> skip line</div>
   </section>
 
   <!-- END -->
@@ -143,6 +143,8 @@ kbd{background:#fff1;border:1px solid var(--bd);border-radius:6px;padding:1px 7p
 const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
 const esc=s=>s.replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const norm=s=>s.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[-–—_]/g,' ').replace(/[^\p{L}\p{N}\s]/gu,'').replace(/\s+/g,' ').trim();
+const clean=s=>s.replace(/[’‘]/g,"'").replace(/[“”]/g,'"').replace(/[–—]/g,'-').replace(/…/g,'...').replace(/\s+/g,' ').trim();
+const fold=s=>s.normalize('NFD').replace(/[\u0300-\u036f]/g,'');
 const fmt=s=>Math.floor(s/60)+':'+String(Math.floor(s%60)).padStart(2,'0');
 const MODES={
   normal:{n:'Normal',d:'Fall below 75% accuracy and you\'re out.',thr:.75},
@@ -172,7 +174,7 @@ function parseLRC(t){
   for(const raw of t.split('\n')){
     const ts=[...raw.matchAll(/\[(\d+):(\d+(?:\.\d+)?)\]/g)]; if(!ts.length)continue;
     const txt=raw.replace(/\[[^\]]*\]/g,'').replace(/<[^>]*>/g,'').trim(), n=norm(txt); if(!n)continue;
-    ts.forEach(m=>out.push({t:+m[1]*60+ +m[2],text:n,raw:txt}));
+    ts.forEach(m=>out.push({t:+m[1]*60+ +m[2],rel:n,str:clean(txt),raw:txt}));
   }
   return out.sort((a,b)=>a.t-b.t);
 }
@@ -184,7 +186,7 @@ function pick(d){
   $('#ytSearch').href='https://www.youtube.com/results?search_query='+encodeURIComponent(d.artistName+' '+d.trackName);
   showBest(); show('setup'); scrollTo(0,0);
 }
-const key=()=>song.id+'|'+mode;
+const key=()=>song.id+'|'+mode+'|'+rules;
 function getBest(){try{return JSON.parse(localStorage.lt||'{}')[key()]}catch(e){}}
 function setBest(v){try{const o=JSON.parse(localStorage.lt||'{}');o[key()]=v;localStorage.lt=JSON.stringify(o)}catch(e){}}
 function showBest(){const b=getBest();$('#sBest').textContent=b?'Best in this mode: '+b+' pts':''}
@@ -192,33 +194,28 @@ function showBest(){const b=getBest();$('#sBest').textContent=b?'Best in this mo
 /* ---------- setup UI ---------- */
 $('#modes').innerHTML=Object.entries(MODES).map(([k,m])=>`<div class="opt ${k===mode?'on':''}" data-m="${k}"><b>${m.n}</b><span>${m.d}</span></div>`).join('');
 $$('.opt').forEach(el=>el.onclick=()=>{mode=el.dataset.m;$$('.opt').forEach(o=>o.classList.toggle('on',o===el));showBest()});
-$$('.chip').forEach(el=>el.onclick=()=>{src=el.dataset.s;$$('.chip').forEach(c=>c.classList.toggle('on',c===el));
+$$('#srcChips .chip').forEach(el=>el.onclick=()=>{src=el.dataset.s;$$('#srcChips .chip').forEach(c=>c.classList.toggle('on',c===el));
   $('#srcYt').classList.toggle('hide',src!=='yt');$('#srcFile').classList.toggle('hide',src!=='file');$('#srcNone').classList.toggle('hide',src!=='none')});
-$('#off').oninput=e=>setOff(+e.target.value);
-function setOff(v){offset=Math.round(v*10)/10;$('#off').value=offset;$('#offLbl').textContent=(offset>0?'+':'')+offset.toFixed(1)+'s'}
+let rules='strict';
+$$('[data-r]').forEach(el=>el.onclick=()=>{rules=el.dataset.r;$$('[data-r]').forEach(c=>c.classList.toggle('on',c===el));showBest()});
 $('#back').onclick=()=>show('search');
 function toast(t){const e=$('#toast');e.textContent=t;e.style.opacity=1;clearTimeout(toast.t);toast.t=setTimeout(()=>e.style.opacity=0,1100)}
 
-/* ---------- clocks ---------- */
+/* ---------- audio ---------- */
 function loadYT(){return new Promise(res=>{if(window.YT&&YT.Player)return res();window.onYouTubeIframeAPIReady=res;const s=document.createElement('script');s.src='https://www.youtube.com/iframe_api';document.head.append(s)})}
 function makeClock(){
-  if(src==='file'){
-    const a=new Audio(fileURL),c={ended:false,get:()=>a.currentTime,pause:()=>a.pause(),resume:()=>a.play(),stop:()=>a.pause()};
-    a.onended=()=>c.ended=true; a.play(); return c;
-  }
+  if(src==='file'){const a=new Audio(fileURL);return{play:()=>a.play(),pause:()=>a.pause(),resume:()=>a.play(),stop:()=>a.pause()}}
   if(src==='yt'){
-    const c={ended:false,playing:false,get:()=>c.playing&&player&&player.getCurrentTime?player.getCurrentTime():0,
-      pause:()=>player&&player.pauseVideo(),resume:()=>player&&player.playVideo(),
-      stop:()=>{try{player.destroy()}catch(e){}player=null;$('#ytwrap').classList.add('hide')}};
+    const c={ready:false,want:false,
+      play(){c.want=true;if(c.ready)player.playVideo()},
+      pause(){if(c.ready)player.pauseVideo()},resume(){if(c.ready)player.playVideo()},
+      stop(){try{player.destroy()}catch(e){}player=null;$('#ytwrap').classList.add('hide')}};
     $('#ytwrap').innerHTML='<div id="yt"></div>';$('#ytwrap').classList.remove('hide');
     loadYT().then(()=>{player=new YT.Player('yt',{width:'100%',height:'100%',videoId:S.vid,playerVars:{playsinline:1,rel:0,modestbranding:1},
-      events:{onReady:e=>e.target.playVideo(),onStateChange:e=>{if(e.data===1)c.playing=true;if(e.data===0)c.ended=true}}})});
+      events:{onReady:()=>{c.ready=true;if(c.want)player.playVideo()}}})});
     return c;
   }
-  let t=lines[0].t-4,last=performance.now();
-  const c={ended:false,p:false,get:()=>{const n=performance.now();if(!c.p)t+=(n-last)/1000;last=n;return t},
-    pause:()=>c.p=true,resume:()=>{last=performance.now();c.p=false},stop:()=>{}};
-  return c;
+  return{play(){},pause(){},resume(){},stop(){}};
 }
 
 /* ---------- game ---------- */
@@ -227,9 +224,11 @@ function start(){
   if(src==='yt'){const m=$('#ytUrl').value.trim().match(/(?:v=|youtu\.be\/|embed\/|shorts\/)([\w-]{11})|^([\w-]{11})$/);
     if(!m){alert('Paste a valid YouTube link first.');return} vid=m[1]||m[2]}
   if(src==='file'){const f=$('#file').files[0];if(!f){alert('Choose an audio file first.');return}fileURL=URL.createObjectURL(f)}
-  lines.forEach(l=>{l.typed='';l.locked=false});
-  S={correct:0,wrong:0,missed:0,combo:0,max:0,score:0,ptr:0,cur:-1,t0:0,vid,M,tail:lines[lines.length-1].t};
-  paused=false;running=true;dirty=true;$('#pause').classList.add('hide');
+  const strict=rules==='strict';
+  lines.forEach(l=>{l.typed='';l.locked=false;l.text=strict?l.str:l.rel});
+  S={correct:0,wrong:0,missed:0,combo:0,max:0,score:0,ptr:0,t0:0,M,vid,strict,started:false};
+  paused=false;running=true;dirty=true;
+  $('#pause').classList.add('hide');$('#ready').classList.remove('hide');
   $('#thr').style.display=M.thr?'block':'none';$('#thr').style.left=(M.thr*100)+'%';
   show('game'); clock=makeClock(); requestAnimationFrame(tick);
 }
@@ -243,18 +242,11 @@ function check(){
   if(M.sudden&&S.wrong+S.missed>0)return finish(true);
   if(M.thr&&a>=25&&acc()<M.thr)finish(true);
 }
+function begin(){if(!S.started){S.started=true;S.t0=performance.now();clock.play();$('#ready').classList.add('hide')}}
+function next(){lock(S.ptr);if(S.ptr+1<lines.length){S.ptr++;dirty=true}else finish(false)}
 function tick(){
   if(!running)return;
-  if(!paused){
-    const t=clock.get()+offset; let cur=-1;
-    for(let i=0;i<lines.length;i++){if(lines[i].t<=t)cur=i;else break}
-    S.cur=cur;
-    if(cur>S.ptr){for(let i=S.ptr;i<cur;i++)lock(i);S.ptr=cur;dirty=true;check();if(!running)return}
-    if(clock.ended||t>S.tail+6){for(let i=0;i<lines.length;i++)lock(i);return finish(false)}
-    const L=lines[S.ptr],nx=lines[S.ptr+1],p=Math.max(0,Math.min(1,(t-L.t)/((nx?nx.t:L.t+5)-L.t)));
-    $('#tbar').style.width=((1-p)*100)+'%';
-    hud(); if(dirty){render();dirty=false}
-  }
+  if(!paused){hud();if(dirty){render();dirty=false}}
   requestAnimationFrame(tick);
 }
 function hud(){
@@ -279,30 +271,36 @@ function render(){
   for(let i=Math.max(0,p-2);i<=Math.min(lines.length-1,p+3);i++){
     const k=i<p?'past':i===p?'cur':'next',L=lines[i];
     h+=`<div class="ln ${k}">${lineHTML(L,k)}</div>`;
-    if(k==='cur'&&!S.M.blind)h+=`<div class="raw">${esc(L.raw)}</div>`;
+    if(k==='cur'){
+      if(L.typed.length>=L.text.length)h+=`<div class="raw" style="color:var(--b)">Press <kbd>Space</kbd> for the next line</div>`;
+      else if(!S.strict&&!S.M.blind)h+=`<div class="raw">${esc(L.raw)}</div>`;
+    }
   }
   $('#lines').innerHTML=h;
 }
 document.addEventListener('keydown',e=>{
   if(!running)return;
-  if(e.key==='Escape'){paused=!paused;paused?clock.pause():(clock.resume(),requestAnimationFrame(tick));$('#pause').classList.toggle('hide',!paused);return}
+  if(e.key==='Escape'){paused=!paused;paused?clock.pause():(S.started&&clock.resume());$('#pause').classList.toggle('hide',!paused);return}
   if(paused||e.ctrlKey||e.metaKey||e.altKey)return;
-  if(e.key==='['||e.key===']'){setOff(offset+(e.key==='['?-.25:.25));toast('Offset '+offset.toFixed(2)+'s');return}
-  const L=lines[S.ptr];if(!L)return;
+  const L=lines[S.ptr];
   if(e.key==='Backspace'){L.typed=L.typed.slice(0,-1);dirty=true;return}
-  if(e.key==='Enter'){e.preventDefault();lock(S.ptr);advance();check();dirty=true;return}
-  const k=e.key.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();
-  if(!/^[\p{L}\p{N} ]$/u.test(k))return;
+  if(e.key==='Enter'){e.preventDefault();begin();lock(S.ptr);check();if(running)next();dirty=true;return}
+  if(e.key.length!==1)return;
   e.preventDefault();
-  if(L.typed.length>=L.text.length)return;
-  if(!S.t0)S.t0=performance.now();
-  if(k===L.text[L.typed.length]){S.correct++;S.combo++;S.max=Math.max(S.max,S.combo);S.score+=Math.round(10*(1+Math.min(S.combo,100)/25))}
-  else{S.wrong++;S.combo=0}
-  L.typed+=k;dirty=true;
-  if(L.typed.length===L.text.length){if(L.typed===L.text)S.score+=50;advance()}
+  if(e.key===' '&&L.typed.length>=L.text.length){begin();next();return}
+  const exp=L.text[L.typed.length];if(exp===undefined)return;
+  let k=e.key;
+  if(!S.strict){k=fold(k).toLowerCase();if(!/^[\p{L}\p{N} ]$/u.test(k))return}
+  begin();
+  const ok=S.strict?fold(k)===fold(exp):k===exp;
+  if(ok){S.correct++;S.combo++;S.max=Math.max(S.max,S.combo);S.score+=Math.round(10*(1+Math.min(S.combo,100)/25));L.typed+=exp}
+  else{S.wrong++;S.combo=0;L.typed+=k}
+  dirty=true;
+  const done=L.typed.length===L.text.length;
+  if(done&&L.typed===L.text)S.score+=50;
   check();
+  if(running&&done&&S.ptr===lines.length-1)finish(false);
 });
-function advance(){ if(S.ptr+1<lines.length&&S.ptr+1<=S.cur+1)S.ptr++ }
 
 /* ---------- end ---------- */
 function finish(died){
